@@ -55,12 +55,13 @@ struct MemberView: View {
                     }
                 }
 
-                Text("Ask the cashier to apply your reward at checkout.")
-                    .font(.callout).foregroundColor(.white.opacity(0.6)).multilineTextAlignment(.center)
-
-                Button("Done", action: onDone).buttonStyle(BigButtonStyle())
-                Button("Staff: apply a reward") { showRedeem = true }
-                    .buttonStyle(BigButtonStyle(prominent: false))
+                let canRedeem = tiers.contains { $0.points <= points }
+                if canRedeem {
+                    Button("Redeem a reward") { showRedeem = true }.buttonStyle(BigButtonStyle())
+                    Button("Done", action: onDone).buttonStyle(BigButtonStyle(prominent: false))
+                } else {
+                    Button("Done", action: onDone).buttonStyle(BigButtonStyle())
+                }
             }
             .padding(.top, 8)
         }
@@ -74,7 +75,7 @@ struct MemberView: View {
     }
 }
 
-// MARK: - Staff redeem
+// MARK: - Redeem (customer)
 
 struct RedeemSheet: View {
     @EnvironmentObject var store: AppStore
@@ -84,8 +85,7 @@ struct RedeemSheet: View {
     let tiers: [Tier]
     var onRedeemed: (RedeemResult) -> Void
 
-    @State private var pin = ""
-    @State private var selected: Tier?
+    @State private var pending: Tier?                  // reward waiting for "Yes, redeem"
     @State private var attemptId = UUID().uuidString   // reused on retry so credit is never issued twice
     @State private var busy = false
     @State private var error: String?
@@ -93,81 +93,73 @@ struct RedeemSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
-                if let done {
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 64)).foregroundColor(Theme.accent)
-                    Text("\(creditText(done.credit)) store credit added")
-                        .font(.title.weight(.bold))
-                    Text("Take \"Store Credit\" as payment at the register.")
-                        .multilineTextAlignment(.center).foregroundColor(.white.opacity(0.8))
-                    Text("\(done.pointsLeft ?? 0) points left").foregroundColor(.white.opacity(0.6))
-                    Button("Done") { dismiss() }.buttonStyle(BigButtonStyle())
-                } else {
-                    Text("Staff PIN").font(.headline)
-                    SecureField("PIN", text: $pin)
-                        .keyboardType(.numberPad).textContentType(.oneTimeCode)
-                        .multilineTextAlignment(.center).font(.title)
-                        .padding().background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 12))
+            ScrollView {
+                VStack(spacing: 16) {
+                    if let done {
+                        Image(systemName: "checkmark.seal.fill").font(.system(size: 64)).foregroundColor(Theme.accent)
+                        Text("\(creditText(done.credit)) store credit added!")
+                            .font(.title.weight(.bold)).multilineTextAlignment(.center)
+                        Text("Tell the cashier you'd like to use your Store Credit.")
+                            .font(.title3).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.85))
+                        Text("\(done.pointsLeft ?? 0) points left").foregroundColor(.white.opacity(0.6))
+                        Button("Done") { dismiss() }.buttonStyle(BigButtonStyle())
+                    } else {
+                        Text("You have \(points) points").font(.title2)
+                        Text("Choose a reward").foregroundColor(.white.opacity(0.7))
+                        ForEach(tiers.filter { $0.points <= points }) { t in
+                            Button {
+                                if pending?.points != t.points { attemptId = UUID().uuidString }
+                                error = nil
+                                pending = t
+                            } label: {
+                                HStack {
+                                    Text("\(t.points) points"); Spacer(); Text("\(t.creditText) off").bold()
+                                }
+                                .font(.title2).padding(20)
+                                .background(pending?.points == t.points ? Theme.accent.opacity(0.35) : Theme.card)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain).disabled(busy)
+                        }
 
-                    Text("Choose a reward (\(points) points)").font(.headline).padding(.top, 8)
-                    let available = tiers.filter { $0.points <= points }
-                    if available.isEmpty {
-                        Text("Not enough points yet.").foregroundColor(.white.opacity(0.6))
+                        if let error { Text(error).foregroundColor(.red).multilineTextAlignment(.center) }
+
+                        if let pending {
+                            Text("Use \(pending.points) points for \(pending.creditText) off? This can't be undone.")
+                                .multilineTextAlignment(.center).padding(.top, 8)
+                            Button(busy ? "Working…" : "Yes, redeem") { Task { await redeem(pending) } }
+                                .buttonStyle(BigButtonStyle(enabled: !busy)).disabled(busy)
+                        }
                     }
-                    ForEach(available) { t in
-                        Button {
-                            if selected?.points != t.points { attemptId = UUID().uuidString }
-                            selected = t
-                        } label: {
-                            HStack {
-                                Text("\(t.points) points"); Spacer(); Text("\(t.creditText) off").bold()
-                                if selected?.points == t.points { Image(systemName: "checkmark") }
-                            }
-                            .font(.title3).padding()
-                            .background(selected?.points == t.points ? Theme.accent.opacity(0.35) : Theme.card)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain)
-                    }
-
-                    if let error { Text(error).foregroundColor(.red).multilineTextAlignment(.center) }
-
-                    Button(busy ? "Working…" : confirmTitle) { Task { await redeem() } }
-                        .buttonStyle(BigButtonStyle(enabled: canConfirm))
-                        .disabled(!canConfirm)
                 }
-                Spacer()
+                .padding(24)
+                .frame(maxWidth: 560)
             }
-            .padding(24)
-            .frame(maxWidth: 560)
-            .navigationTitle("Apply reward")
+            .navigationTitle("Redeem")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if done == nil { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             }
         }
         .preferredColorScheme(.dark)
-        .interactiveDismissDisabled(busy)
+        .interactiveDismissDisabled(busy || done != nil)
     }
 
-    private var canConfirm: Bool { selected != nil && pin.count >= 4 && !busy }
-    private var confirmTitle: String { selected.map { "Apply \($0.creditText) off" } ?? "Apply reward" }
     private func creditText(_ c: Double?) -> String {
         guard let c else { return "$0" }
         return c == c.rounded() ? "$\(Int(c))" : String(format: "$%.2f", c)
     }
 
-    private func redeem() async {
-        guard let selected else { return }
+    private func redeem(_ tier: Tier) async {
         busy = true; error = nil
         defer { busy = false }
         do {
-            let r = try await store.api.redeem(phone: phone, points: selected.points, clientId: attemptId, staffPin: pin)
+            let r = try await store.api.redeem(phone: phone, points: tier.points, clientId: attemptId)
             switch r.status {
             case "redeemed": done = r; onRedeemed(r)
             case "insufficient_points": error = "Not enough points."
-            case "failed_earlier": attemptId = UUID().uuidString; error = "That attempt failed. Tap apply to try again."
-            case "lightspeed_error": error = "Lightspeed couldn't add the credit. Tap apply to try again; it won't use the points twice."
-            default: error = "Couldn't apply the reward (\(r.status))."
+            case "failed_earlier": attemptId = UUID().uuidString; error = "That didn't go through. Tap redeem to try again."
+            case "lightspeed_error": error = "We couldn't add the credit just now. Tap redeem to try again; your points won't be used twice."
+            default: error = "Couldn't redeem (\(r.status)). Please ask a team member."
             }
         } catch { self.error = error.localizedDescription }
     }

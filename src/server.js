@@ -125,13 +125,18 @@ const server = createServer(async (req, res) => {
         return send(res, 200, await signup(body));
       }
       if (url.pathname === '/api/redeem' && req.method === 'POST') {
-        if (pinLocked(ip)) return send(res, 429, { error: 'PIN locked for 10 minutes' });
-        if (!safeEq(req.headers['x-staff-pin'], config.staffPin)) {
-          const f = pinFails.get(ip) || { count: 0 };
-          pinFails.set(ip, { count: f.count + 1, last: Date.now() });
-          return send(res, 403, { error: 'wrong PIN' });
+        if (!throttle(ip, 'redeem', 30, 60 * 60_000)) return send(res, 429, { error: 'too many attempts' });
+        if (config.requirePin) {
+          if (pinLocked(ip)) return send(res, 429, { error: 'PIN locked for 10 minutes' });
+          if (!safeEq(req.headers['x-staff-pin'], config.staffPin)) {
+            const f = pinFails.get(ip) || { count: 0 };
+            pinFails.set(ip, { count: f.count + 1, last: Date.now() });
+            return send(res, 403, { error: 'wrong PIN' });
+          }
+          pinFails.delete(ip);
         }
-        pinFails.delete(ip);
+        // Without a PIN, limit how often any one phone number can be redeemed.
+        if (!throttle(String(body.phone || ''), 'redeem-phone', 10, 60 * 60_000)) return send(res, 429, { error: 'too many redemptions for this number; ask a team member' });
         return send(res, 200, await redeem(body));
       }
     }

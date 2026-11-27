@@ -15,7 +15,9 @@ export const config = {
   appKey: required('APP_KEY'),
   adminKey: required('ADMIN_KEY'),
   webhookToken: required('WEBHOOK_TOKEN'),
-  staffPin: required('STAFF_PIN'),
+  // Optional staff PIN for redeeming. Off by default: customers redeem on the iPad themselves.
+  requirePin: env.REQUIRE_STAFF_PIN === 'true',
+  staffPin: env.STAFF_PIN || '',
   ls: {
     prefix,
     clientId: required('LS_CLIENT_ID'),

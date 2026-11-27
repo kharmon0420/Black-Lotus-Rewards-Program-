@@ -43,7 +43,7 @@ await new Promise((r) => mock.listen(MOCK, r));
 rmSync('/tmp/rw-test', { recursive: true, force: true });
 const env = {
   ...process.env, PORT: APP, DB_PATH: '/tmp/rw-test/db.sqlite', PUBLIC_URL: `http://localhost:${APP}`,
-  APP_KEY: 'appkey', ADMIN_KEY: 'adminkey', WEBHOOK_TOKEN: 'whtok', STAFF_PIN: '123456',
+  APP_KEY: 'appkey', ADMIN_KEY: 'adminkey', WEBHOOK_TOKEN: 'whtok', STAFF_PIN: '123456', REQUIRE_STAFF_PIN: process.env.NOPIN === '1' ? 'false' : 'true',
   LS_DOMAIN_PREFIX: 'test', LS_CLIENT_ID: 'cid', LS_CLIENT_SECRET: 'csecret', LS_BASE_URL: `http://localhost:${MOCK}`,
 };
 const svc = spawn('node', ['--disable-warning=ExperimentalWarning', 'src/server.js'], { env, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -140,7 +140,7 @@ try {
     assert.match(r.body.result.ignored, /status/);
   });
 
-  await t('redeem needs the staff PIN', async () => {
+  if (process.env.NOPIN !== '1') await t('redeem needs the staff PIN', async () => {
     const r = await post('/api/redeem', { phone: '2145550101', points: 200, clientId: 'r-1' });
     assert.equal(r.status, 403);
   });
@@ -189,7 +189,7 @@ try {
     assert.equal(r.body.status, 'redeemed');
     assert.ok(calls.tokens.includes('refresh_token'));
   });
-  await t('PIN locks after 5 wrong tries', async () => {
+  if (process.env.NOPIN !== '1') await t('PIN locks after 5 wrong tries', async () => {
     for (let i = 0; i < 5; i++) await post('/api/redeem', { phone: '2145550101', points: 100, clientId: 'x' + i }, { ...H, 'x-staff-pin': '000000' });
     const r = await post('/api/redeem', { phone: '2145550101', points: 100, clientId: 'x9' }, PIN);
     assert.equal(r.status, 429);

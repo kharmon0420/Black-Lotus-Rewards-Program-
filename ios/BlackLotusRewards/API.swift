@@ -67,9 +67,8 @@ struct RewardsAPI {
         return try await send("/api/signup", method: "POST", body: body)
     }
 
-    func redeem(phone: String, points: Int, clientId: String, staffPin: String) async throws -> RedeemResult {
+    func redeem(phone: String, points: Int, clientId: String) async throws -> RedeemResult {
         try await send("/api/redeem", method: "POST",
-                       body: ["phone": phone, "points": points, "clientId": clientId],
-                       extra: ["x-staff-pin": staffPin])
+                       body: ["phone": phone, "points": points, "clientId": clientId])
     }
 }

@@ -28,7 +28,7 @@ Keeps the points ledger, talks to Lightspeed X-Series, and serves the iPad app.
 - GET  /api/config
 - GET  /api/member?phone=...        -> member | existing_customer | new
 - POST /api/signup  {phone, firstName, lastName?, email?}
-- POST /api/redeem  {phone, points, clientId}   (also header `x-staff-pin`; clientId = new UUID per tap)
+- POST /api/redeem  {phone, points, clientId}   (clientId = new UUID per tap; header `x-staff-pin` only needed if REQUIRE_STAFF_PIN=true)
 
 ## Not yet verified against a live store
 Tested against a simulated Lightspeed built from its public docs. These details come from

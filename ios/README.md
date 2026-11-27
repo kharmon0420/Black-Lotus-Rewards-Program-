@@ -1,6 +1,6 @@
 # Black Lotus Rewards: iPad app (SwiftUI)
 
-Kiosk-style iPad app. Customers enter a phone number to see points, join, or (with a staff PIN) apply a reward.
+Kiosk-style iPad app. Customers enter a phone number to see points, join, or redeem a reward.
 Only the lotus and "BLACK LOTUS" appear in the app.
 
 ## Build it (on the Mac)
@@ -24,4 +24,5 @@ The app asks for the **App key**: copy `APP_KEY` from Render > Environment and t
 To open Settings later, press and hold the logo for 3 seconds.
 
 ## Redeeming
-Customer looks themselves up, staff taps **Staff: apply a reward**, enters the staff PIN, picks the reward. The service adds Lightspeed store credit to the customer; the cashier takes "Store Credit" as payment.
+The customer looks themselves up, taps **Redeem a reward**, picks a reward and confirms. The service adds Lightspeed store credit to their account; they tell the cashier, who takes "Store Credit" as payment.
+No PIN is needed by default. To require a staff PIN on the server, set `REQUIRE_STAFF_PIN=true` in Render (the iPad app would then need a PIN field added).
