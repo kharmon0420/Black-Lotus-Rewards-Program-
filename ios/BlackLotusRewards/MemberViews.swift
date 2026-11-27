@@ -9,6 +9,7 @@ struct MemberView: View {
     var onDone: () -> Void
     var onChanged: (LookupResult) -> Void
     @State private var showRedeem = false
+    @State private var showBirthday = false
 
     private var points: Int { result.points ?? 0 }
     private var tiers: [Tier] { result.tiers ?? store.config?.tiers ?? [] }
@@ -30,6 +31,21 @@ struct MemberView: View {
                 if result.bonusPending == true {
                     Text("Your \(result.signupBonus ?? store.config?.signupBonus ?? 100) welcome points are added after your next purchase.")
                         .multilineTextAlignment(.center).foregroundColor(Theme.accent)
+                }
+
+                if result.birthdaySet == false {
+                    Button { showBirthday = true } label: {
+                        HStack {
+                            Image(systemName: "gift.fill")
+                            Text("Add your birthday for \(result.birthdayBonus ?? store.config?.birthdayBonus ?? 100) bonus points")
+                                .multilineTextAlignment(.leading)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.headline).padding(16)
+                        .background(Theme.accent.opacity(0.25))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain)
                 }
 
                 if let next {
@@ -69,7 +85,16 @@ struct MemberView: View {
             RedeemSheet(phone: phone, points: points, tiers: tiers) { updated in
                 onChanged(LookupResult(status: "member", firstName: result.firstName, points: updated.pointsLeft,
                                        bonusPending: result.bonusPending, signupBonus: result.signupBonus,
+                                       birthdaySet: result.birthdaySet, birthdayBonus: result.birthdayBonus,
                                        tiers: updated.tiers ?? result.tiers))
+            }
+        }
+        .sheet(isPresented: $showBirthday) {
+            BirthdaySheet(phone: phone, bonus: result.birthdayBonus ?? store.config?.birthdayBonus ?? 100) {
+                onChanged(LookupResult(status: "member", firstName: result.firstName, points: result.points,
+                                       bonusPending: result.bonusPending, signupBonus: result.signupBonus,
+                                       birthdaySet: true, birthdayBonus: result.birthdayBonus,
+                                       tiers: result.tiers))
             }
         }
     }
@@ -178,6 +203,8 @@ struct JoinView: View {
     @State private var first = ""
     @State private var last = ""
     @State private var email = ""
+    @State private var bMonth = 0
+    @State private var bDay = 0
     @State private var busy = false
     @State private var error: String?
     @FocusState private var focus: Field?
@@ -199,6 +226,10 @@ struct JoinView: View {
                 field("Last name (optional)", $last, .last).textContentType(.familyName)
                 field("Email (optional)", $email, .email).keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
+
+ Text("Birthday (optional): get \(store.config?.birthdayBonus ?? 100) bonus points in your birthday month")
+                    .font(.callout).foregroundColor(.white.opacity(0.75)).multilineTextAlignment(.center).padding(.top, 4)
+                BirthdayFields(month: $bMonth, day: $bDay)
 
                 if let error { Text(error).foregroundColor(.red).multilineTextAlignment(.center) }
 
@@ -225,7 +256,8 @@ struct JoinView: View {
             let r = try await store.api.signup(phone: phone,
                                                firstName: first.trimmingCharacters(in: .whitespaces),
                                                lastName: last.trimmingCharacters(in: .whitespaces),
-                                               email: email.trimmingCharacters(in: .whitespaces))
+                                               email: email.trimmingCharacters(in: .whitespaces),
+                                               birthMonth: bMonth, birthDay: bDay)
             switch r.status {
             case "signed_up", "already_member": onSignedUp(r)
             case "missing_name": error = "Please enter your first name."
@@ -254,6 +286,83 @@ struct WelcomeView: View {
             Spacer()
             Button("Done", action: onDone).buttonStyle(BigButtonStyle())
         }
+    }
+}
+
+// MARK: - Birthday
+
+struct BirthdayFields: View {
+    @Binding var month: Int
+    @Binding var day: Int
+    private let months = Calendar.current.monthSymbols
+    private let maxDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Picker("Month", selection: $month) {
+                Text("Month").tag(0)
+                ForEach(1...12, id: \.self) { Text(months[$0 - 1]).tag($0) }
+            }
+            Picker("Day", selection: $day) {
+                Text("Day").tag(0)
+                ForEach(1...(month == 0 ? 31 : maxDays[month - 1]), id: \.self) { Text("\($0)").tag($0) }
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: .infinity)
+        .padding(8)
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: month) { _ in
+            if month > 0 && day > maxDays[month - 1] { day = 0 }
+        }
+    }
+}
+
+struct BirthdaySheet: View {
+    @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let phone: String
+    let bonus: Int
+    var onSaved: () -> Void
+
+    @State private var month = 0
+    @State private var day = 0
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                Image(systemName: "gift.fill").font(.system(size: 52)).foregroundColor(Theme.accent)
+                Text("Get \(bonus) bonus points in your birthday month")
+                    .font(.title2.weight(.semibold)).multilineTextAlignment(.center)
+                Text("We only need the month and day. It can't be changed later.")
+                    .foregroundColor(.white.opacity(0.7)).multilineTextAlignment(.center)
+                BirthdayFields(month: $month, day: $day)
+                if let error { Text(error).foregroundColor(.red).multilineTextAlignment(.center) }
+                Button(busy ? "Saving…" : "Save birthday") { Task { await save() } }
+                    .buttonStyle(BigButtonStyle(enabled: month > 0 && day > 0 && !busy))
+                    .disabled(month == 0 || day == 0 || busy)
+                Spacer()
+            }
+            .padding(24).frame(maxWidth: 560)
+            .navigationTitle("Birthday").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func save() async {
+        busy = true; error = nil
+        defer { busy = false }
+        do {
+            let r = try await store.api.setBirthday(phone: phone, month: month, day: day)
+            switch r.status {
+            case "saved", "already_set": onSaved(); dismiss()
+            case "invalid_birthday": error = "That date doesn't look right."
+            default: error = "Couldn't save (\(r.status))."
+            }
+        } catch { self.error = error.localizedDescription }
     }
 }
 

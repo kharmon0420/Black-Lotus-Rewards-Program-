@@ -3,12 +3,16 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { kvGet, kvSet } from './db.js';
 import { exchangeCode, isConnected, registerWebhook, syncCustomers } from './ls.js';
-import { lookup, processSale, redeem, signup } from './rewards.js';
+import { lookup, processSale, redeem, setBirthday, signup } from './rewards.js';
+import { renderReport } from './report.js';
 
 const safeEq = (a, b) => {
   const x = Buffer.from(String(a ?? '')), y = Buffer.from(String(b ?? ''));
   return x.length === y.length && timingSafeEqual(x, y);
 };
+
+// A '+' in a link's query string is read as a space; accept both so copy/pasted keys just work.
+const adminKeyOk = (v) => safeEq(String(v ?? '').replace(/ /g, '+'), config.adminKey);
 
 const send = (res, status, body, type = 'application/json') => {
   res.writeHead(status, { 'content-type': type });
@@ -64,7 +68,7 @@ const server = createServer(async (req, res) => {
 
     // ----- Connect Lightspeed (admin only) -----
     if (url.pathname === '/auth/start') {
-      if (!safeEq(url.searchParams.get('key'), config.adminKey)) return send(res, 403, { error: 'forbidden' });
+      if (!adminKeyOk(url.searchParams.get('key'))) return send(res, 403, { error: 'forbidden' });
       const state = randomBytes(16).toString('hex');
       kvSet('oauth_state', { state, at: Date.now() });
       const q = new URLSearchParams({
@@ -98,6 +102,13 @@ const server = createServer(async (req, res) => {
       return send(res, 200, `Connected to Lightspeed. ${note}`, 'text/plain');
     }
 
+    // ----- Owner report (admin only) -----
+    if (url.pathname === '/admin/report') {
+      if (!adminKeyOk(url.searchParams.get('key'))) return send(res, 403, { error: 'forbidden' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(renderReport());
+    }
+
     // ----- Lightspeed webhook -----
     if (url.pathname === `/webhook/${config.webhookToken}` && req.method === 'POST') {
       const raw = await readBody(req);
@@ -125,7 +136,7 @@ const server = createServer(async (req, res) => {
       const body = req.method === 'POST' ? JSON.parse((await readBody(req)).toString() || '{}') : {};
 
       if (url.pathname === '/api/config' && req.method === 'GET') {
-        return send(res, 200, { pointsPerDollar: config.pointsPerDollar, signupBonus: config.signupBonus, tiers: config.tiers });
+        return send(res, 200, { pointsPerDollar: config.pointsPerDollar, signupBonus: config.signupBonus, birthdayBonus: config.birthdayBonus, tiers: config.tiers });
       }
       if (url.pathname === '/api/member' && req.method === 'GET') {
         return send(res, 200, lookup(url.searchParams.get('phone')));
@@ -133,6 +144,10 @@ const server = createServer(async (req, res) => {
       if (url.pathname === '/api/signup' && req.method === 'POST') {
         if (!throttle(ip, 'signup', 20, 60 * 60_000)) return send(res, 429, { error: 'too many sign-ups' });
         return send(res, 200, await signup(body));
+      }
+      if (url.pathname === '/api/birthday' && req.method === 'POST') {
+        if (!throttle(ip, 'birthday', 30, 60 * 60_000)) return send(res, 429, { error: 'slow down' });
+        return send(res, 200, setBirthday(body));
       }
       if (url.pathname === '/api/redeem' && req.method === 'POST') {
         if (!throttle(ip, 'redeem', 30, 60 * 60_000)) return send(res, 429, { error: 'too many attempts' });

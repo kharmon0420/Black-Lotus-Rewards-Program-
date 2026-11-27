@@ -194,6 +194,46 @@ try {
     const r = await post('/api/redeem', { phone: '2145550101', points: 100, clientId: 'x9' }, PIN);
     assert.equal(r.status, 429);
   });
+
+  // ---- birthday bonus + owner report ----
+  const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', month: 'numeric' }).format(new Date());
+  const thisMonth = Number(nowParts), otherMonth = thisMonth === 12 ? 1 : thisMonth + 1;
+  await t('birthday: invalid dates are rejected, valid one saves once and then locks', async () => {
+    assert.equal((await post('/api/birthday', { phone: '2145550101', month: 2, day: 30 })).body.status, 'invalid_birthday');
+    assert.equal((await post('/api/birthday', { phone: '2145550101', month: 13, day: 1 })).body.status, 'invalid_birthday');
+    assert.equal((await post('/api/birthday', { phone: '2145550199', month: 1, day: 1 })).body.status, 'not_member');
+    const ok = await post('/api/birthday', { phone: '2145550101', month: thisMonth, day: 15 });
+    assert.equal(ok.body.status, 'saved');
+    assert.equal((await post('/api/birthday', { phone: '2145550101', month: otherMonth, day: 2 })).body.status, 'already_set');
+    const m = await get('/api/member?phone=2145550101');
+    assert.equal(m.birthdaySet, true);
+  });
+  let before;
+  await t('birthday bonus is paid on the first purchase in the birthday month, once per year', async () => {
+    before = (await get('/api/member?phone=2145550101')).points;
+    const a = await webhook(sale({ id: 'bday-1', totals: { total_price: '10.00', total_tax: '0.80' }, register_sale_payments: [{ amount: 10.8, payment_type: { name: 'Cash' } }] }));
+    assert.equal(a.body.result.points, 20);
+    assert.equal(a.body.result.birthday, 100);
+    const b = await webhook(sale({ id: 'bday-2', totals: { total_price: '10.00', total_tax: '0.80' }, register_sale_payments: [{ amount: 10.8, payment_type: { name: 'Cash' } }] }));
+    assert.equal(b.body.result.birthday, undefined);
+    assert.equal((await get('/api/member?phone=2145550101')).points, before + 20 + 100 + 20);
+  });
+  await t('voiding the sale that paid the birthday bonus takes it back', async () => {
+    const v = await webhook(sale({ id: 'bday-1', status: 'VOIDED', event_reason: 'voided' }));
+    assert.equal(v.body.result.reversed, 20);
+    assert.equal((await get('/api/member?phone=2145550101')).points, before + 20);
+  });
+  await t('owner report: needs the admin key, and renders for it', async () => {
+    assert.equal((await fetch(base + '/admin/report')).status, 403);
+    assert.equal((await fetch(base + '/admin/report?key=nope')).status, 403);
+    const r = await fetch(base + '/admin/report?key=adminkey');
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /text\/html/);
+    const html = await r.text();
+    assert.match(html, /Total members/);
+    assert.match(html, /Birthday bonus points/);
+    assert.match(html, /Rewards redeemed/);
+  });
 } finally {
   svc.kill(); mock.close();
   console.log(failed ? `\n${failed} FAILED` : '\nAll passed');

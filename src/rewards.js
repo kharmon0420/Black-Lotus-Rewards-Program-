@@ -26,6 +26,8 @@ export function lookup(rawPhone) {
       points: Math.max(0, m.points),
       bonusPending: !!m.bonus_pending,
       signupBonus: config.signupBonus,
+      birthdaySet: m.birth_month != null,
+      birthdayBonus: config.birthdayBonus,
       tiers: tiersFor(m.points),
     };
   }
@@ -35,7 +37,22 @@ export function lookup(rawPhone) {
 }
 
 // ---------- Sign up ----------
-export async function signup({ phone: rawPhone, firstName, lastName, email }) {
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const validBirthday = (m, d) => Number.isInteger(m) && Number.isInteger(d) && m >= 1 && m <= 12 && d >= 1 && d <= DAYS_IN_MONTH[m - 1];
+
+/** Month + day only (no year). Can be set once; after that it is locked. */
+export function setBirthday({ phone: rawPhone, month, day }) {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return { status: 'invalid_phone' };
+  const m = Number(month), d = Number(day);
+  if (!validBirthday(m, d)) return { status: 'invalid_birthday' };
+  const member = memberByPhone(phone);
+  if (!member) return { status: 'not_member' };
+  const r = db.prepare('UPDATE members SET birth_month = ?, birth_day = ? WHERE id = ? AND birth_month IS NULL').run(m, d, member.id);
+  return r.changes ? { status: 'saved', birthdayBonus: config.birthdayBonus } : { status: 'already_set' };
+}
+
+export async function signup({ phone: rawPhone, firstName, lastName, email, birthMonth, birthDay }) {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { status: 'invalid_phone' };
   firstName = String(firstName || '').trim();
@@ -60,6 +77,7 @@ export async function signup({ phone: rawPhone, firstName, lastName, email }) {
 
   db.prepare('INSERT INTO members (ls_customer_id, phone, first_name, email) VALUES (?, ?, ?, ?)')
     .run(customerId, phone, existing?.first_name || firstName, email);
+  if (validBirthday(Number(birthMonth), Number(birthDay))) setBirthday({ phone, month: birthMonth, day: birthDay });
   return { status: 'signed_up', linkedExisting: !!existing, signupBonus: config.signupBonus, bonusPending: true };
 }
 
@@ -107,8 +125,26 @@ export function processSale(sale) {
         bonus = config.signupBonus;
       }
     }
-    return { member: member.id, points, bonus };
+
+    // Birthday bonus: first purchase in the member's birthday month (store time), once per year.
+    let birthday = 0;
+    const bm = db.prepare('SELECT birth_month FROM members WHERE id = ?').get(member.id).birth_month;
+    if (bm && points > 0) {
+      const when = localParts(sale.sale_date);
+      if (when.month === bm && addLedger(member.id, config.birthdayBonus, 'birthday', `${member.id}:${when.year}`, `sale ${saleId}`)) {
+        birthday = config.birthdayBonus;
+      }
+    }
+    return { member: member.id, points, bonus, ...(birthday ? { birthday } : {}) };
   });
+}
+
+function localParts(saleDate) {
+  let d = saleDate ? new Date(saleDate) : new Date();
+  if (Number.isNaN(d.getTime())) d = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, year: 'numeric', month: 'numeric' }).formatToParts(d);
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return { year: get('year'), month: get('month') };
 }
 
 function reverseSale(member, saleId) {
@@ -121,6 +157,8 @@ function reverseSale(member, saleId) {
       addLedger(member.id, -config.signupBonus, 'bonus_void', `${member.id}:${saleId}`, 'first sale voided');
       db.prepare('UPDATE members SET bonus_pending = 1, bonus_sale_id = NULL WHERE id = ?').run(member.id);
     }
+    const bday = db.prepare("SELECT * FROM ledger WHERE kind = 'birthday' AND note = ?").get(`sale ${saleId}`);
+    if (bday) addLedger(member.id, -bday.delta, 'birthday_void', bday.ref, 'sale voided');
     db.prepare('UPDATE sales SET voided = 1 WHERE sale_id = ?').run(saleId);
     return { reversed: s.points_earned };
   });

@@ -14,6 +14,7 @@ struct Tier: Codable, Identifiable, Hashable {
 struct AppConfig: Codable {
     let pointsPerDollar: Int
     let signupBonus: Int
+    let birthdayBonus: Int?
     let tiers: [Tier]
 }
 
@@ -24,6 +25,8 @@ struct LookupResult: Codable {
     let points: Int?
     let bonusPending: Bool?
     let signupBonus: Int?
+    let birthdaySet: Bool?
+    let birthdayBonus: Int?
     let tiers: [Tier]?
 }
 
@@ -33,6 +36,12 @@ struct SignupResult: Codable {
     let linkedExisting: Bool?
     let signupBonus: Int?
     let bonusPending: Bool?
+}
+
+/// Response of POST /api/birthday
+struct BirthdayResult: Codable {
+    let status: String          // saved | already_set | invalid_birthday | not_member
+    let birthdayBonus: Int?
 }
 
 /// Response of POST /api/redeem

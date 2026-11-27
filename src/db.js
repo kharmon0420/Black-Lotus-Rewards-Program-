@@ -48,6 +48,11 @@ CREATE INDEX IF NOT EXISTS idx_lsc_email ON ls_customers(email);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `);
 
+// Lightweight migrations for columns added after the first release.
+const memberCols = db.prepare('PRAGMA table_info(members)').all().map((c) => c.name);
+if (!memberCols.includes('birth_month')) db.exec('ALTER TABLE members ADD COLUMN birth_month INTEGER');
+if (!memberCols.includes('birth_day')) db.exec('ALTER TABLE members ADD COLUMN birth_day INTEGER');
+
 export function kvGet(key) {
   const row = db.prepare('SELECT value FROM kv WHERE key = ?').get(key);
   return row ? JSON.parse(row.value) : null;

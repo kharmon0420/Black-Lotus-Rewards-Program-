@@ -60,11 +60,16 @@ struct RewardsAPI {
         try await send("/api/member", query: [URLQueryItem(name: "phone", value: phone)])
     }
 
-    func signup(phone: String, firstName: String, lastName: String, email: String) async throws -> SignupResult {
+    func signup(phone: String, firstName: String, lastName: String, email: String, birthMonth: Int = 0, birthDay: Int = 0) async throws -> SignupResult {
         var body: [String: Any] = ["phone": phone, "firstName": firstName]
         if !lastName.isEmpty { body["lastName"] = lastName }
         if !email.isEmpty { body["email"] = email }
+        if birthMonth > 0 && birthDay > 0 { body["birthMonth"] = birthMonth; body["birthDay"] = birthDay }
         return try await send("/api/signup", method: "POST", body: body)
+    }
+
+    func setBirthday(phone: String, month: Int, day: Int) async throws -> BirthdayResult {
+        try await send("/api/birthday", method: "POST", body: ["phone": phone, "month": month, "day": day])
     }
 
     func redeem(phone: String, points: Int, clientId: String) async throws -> RedeemResult {

@@ -37,6 +37,8 @@ export const config = {
   // Program rules
   pointsPerDollar: 2,
   signupBonus: 100,
+  birthdayBonus: Number(env.BIRTHDAY_BONUS) || 100,
+  timezone: env.TZ_NAME || 'America/Chicago',
   minFirstSale: Number(env.MIN_FIRST_SALE) || 0,
   tiers: [
     { points: 100, credit: 2 },

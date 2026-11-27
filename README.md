@@ -28,9 +28,16 @@ Keeps the points ledger, talks to Lightspeed X-Series, and serves the iPad app.
 - GET  /api/config
 - GET  /api/member?phone=...        -> member | existing_customer | new
 - POST /api/signup  {phone, firstName, lastName?, email?}
+- POST /api/birthday {phone, month, day}  (month/day only; can be set once)
 - POST /api/redeem  {phone, points, clientId}   (clientId = new UUID per tap; header `x-staff-pin` only needed if REQUIRE_STAFF_PIN=true)
 
 ## Not yet verified against a live store
 Tested against a simulated Lightspeed built from its public docs. These details come from
 docs that were incomplete, so check them on first real run: customer list response shape,
 the automatic webhook-creation request, and whether the sale's `status` is exactly `CLOSED`.
+
+## Birthday bonus
+Members can add a birthday (month and day only, set once, then locked). BIRTHDAY_BONUS points (default 100) are credited with their first purchase in their birthday month, once per year. A voided sale takes the bonus back. TZ_NAME (default America/Chicago) decides what "this month" means.
+
+## Owner report
+Open `https://<your-service>.onrender.com/admin/report?key=<ADMIN_KEY>` for members, points, redemptions, estimated program cost, the last 14 days, and top members.
