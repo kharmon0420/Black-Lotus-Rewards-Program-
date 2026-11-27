@@ -126,6 +126,8 @@ const server = createServer(async (req, res) => {
         }));
       }
       const result = payload ? processSale(payload) : { ignored: 'no payload' };
+      // One short line per sale event so it is easy to see what happened (no names or contact details).
+      console.log('sale-result', JSON.stringify({ sale: String(payload?.id || '').slice(0, 8), status: payload?.status, result }));
       return send(res, 200, { ok: true, result });
     }
 
