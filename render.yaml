@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: black-lotus-rewards
+    runtime: node
+    plan: starter          # a persistent disk requires a paid plan
+    region: ohio
+    buildCommand: echo "no build step"
+    startCommand: npm start
+    healthCheckPath: /health
+    disk:
+      name: rewards-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_PATH
+        value: /data/rewards.db
+      # Secrets Render makes up for you (view them later in the dashboard, Environment tab)
+      - key: APP_KEY
+        generateValue: true
+      - key: ADMIN_KEY
+        generateValue: true
+      - key: WEBHOOK_TOKEN
+        generateValue: true
+      # You type these into the Render dashboard; they never go in the code
+      - key: STAFF_PIN
+        sync: false
+      - key: LS_DOMAIN_PREFIX
+        sync: false
+      - key: LS_CLIENT_ID
+        sync: false
+      - key: LS_CLIENT_SECRET
+        sync: false
