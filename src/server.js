@@ -145,7 +145,9 @@ const server = createServer(async (req, res) => {
       }
       if (url.pathname === '/api/signup' && req.method === 'POST') {
         if (!throttle(ip, 'signup', 20, 60 * 60_000)) return send(res, 429, { error: 'too many sign-ups' });
-        return send(res, 200, await signup(body));
+        const out = await signup(body);
+        console.log('signup-result', JSON.stringify({ phoneEnd: String(body.phone || '').replace(/\D/g, '').slice(-4), ...out }));
+        return send(res, 200, out);
       }
       if (url.pathname === '/api/birthday' && req.method === 'POST') {
         if (!throttle(ip, 'birthday', 30, 60 * 60_000)) return send(res, 429, { error: 'slow down' });
@@ -164,7 +166,9 @@ const server = createServer(async (req, res) => {
         }
         // Without a PIN, limit how often any one phone number can be redeemed.
         if (!throttle(String(body.phone || ''), 'redeem-phone', 10, 60 * 60_000)) return send(res, 429, { error: 'too many redemptions for this number; ask a team member' });
-        return send(res, 200, await redeem(body));
+        const out = await redeem(body);
+        console.log('redeem-result', JSON.stringify({ phoneEnd: String(body.phone || '').replace(/\D/g, '').slice(-4), points: body.points, status: out.status, message: out.message }));
+        return send(res, 200, out);
       }
     }
     return send(res, 404, { error: 'not found' });

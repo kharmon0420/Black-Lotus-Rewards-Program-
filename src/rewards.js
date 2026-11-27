@@ -78,6 +78,7 @@ export async function signup({ phone: rawPhone, firstName, lastName, email, birt
   db.prepare('INSERT INTO members (ls_customer_id, phone, first_name, email) VALUES (?, ?, ?, ?)')
     .run(customerId, phone, existing?.first_name || firstName, email);
   if (validBirthday(Number(birthMonth), Number(birthDay))) setBirthday({ phone, month: birthMonth, day: birthDay });
+  console.log('signup-customer', JSON.stringify({ lightspeedId: String(customerId).slice(0, 8), linkedExisting: !!existing }));
   return { status: 'signed_up', linkedExisting: !!existing, signupBonus: config.signupBonus, bonusPending: true };
 }
 
