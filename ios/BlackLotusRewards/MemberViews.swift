@@ -8,29 +8,63 @@ struct MemberView: View {
     let phone: String
     var onDone: () -> Void
     var onChanged: (LookupResult) -> Void
-    @State private var showRedeem = false
+    @State private var redeemTier: Tier?
     @State private var showBirthday = false
 
     private var points: Int { result.points ?? 0 }
     private var tiers: [Tier] { result.tiers ?? store.config?.tiers ?? [] }
     private var next: Tier? { tiers.first { points < $0.points } }
+    private var bestAffordable: Tier? { tiers.last { $0.points <= points } }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Text("Welcome back\(result.firstName.map { ", \($0)" } ?? "")")
-                    .font(.title).foregroundColor(.white.opacity(0.9)).padding(.top, 12)
-
-                VStack(spacing: 4) {
-                    Text("\(points)").font(.system(size: 80, weight: .bold, design: .rounded))
-                    Text("points").font(.title3).foregroundColor(.white.opacity(0.7))
+                // Name on the left, points total in the top corner.
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Welcome back").font(.title3).foregroundColor(.white.opacity(0.7))
+                        Text(result.firstName ?? "").font(.largeTitle.weight(.bold))
+                    }
+                    Spacer()
+                    VStack(spacing: 0) {
+                        Text("\(points)").font(.system(size: 40, weight: .bold, design: .rounded))
+                        Text("points").font(.footnote).foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 10)
+                    .background(Theme.accent.opacity(0.25))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                .frame(maxWidth: .infinity).padding(.vertical, 20)
-                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20))
+                .padding(.top, 12)
 
                 if result.bonusPending == true {
                     Text("Your \(result.signupBonus ?? store.config?.signupBonus ?? 100) welcome points are added after your next purchase.")
                         .multilineTextAlignment(.center).foregroundColor(Theme.accent)
+                }
+
+                if let next {
+                    Text("\(next.points - points) more points for \(next.creditText) off")
+                        .font(.headline).foregroundColor(.white.opacity(0.85))
+                } else if !tiers.isEmpty {
+                    Text("You've unlocked every reward!").font(.headline).foregroundColor(Theme.accent)
+                }
+
+                // Swipe sideways through the rewards.
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(tiers) { t in
+                                RewardCard(tier: t, points: points) { redeemTier = t }
+                                    .id(t.points)
+                            }
+                        }
+                        .padding(.horizontal, 4).padding(.vertical, 4)
+                    }
+                    .onAppear {
+                        if let best = bestAffordable { proxy.scrollTo(best.points, anchor: .center) }
+                    }
+                }
+                if tiers.count > 1 {
+                    Text("Swipe to see more rewards  ›").font(.footnote).foregroundColor(.white.opacity(0.5))
                 }
 
                 if result.birthdaySet == false {
@@ -48,41 +82,12 @@ struct MemberView: View {
                     }.buttonStyle(.plain)
                 }
 
-                if let next {
-                    Text("\(next.points - points) more points for \(next.creditText) off")
-                        .font(.headline).foregroundColor(.white.opacity(0.85))
-                } else if !tiers.isEmpty {
-                    Text("You've unlocked every reward!").font(.headline).foregroundColor(Theme.accent)
-                }
-
-                VStack(spacing: 8) {
-                    ForEach(tiers) { t in
-                        let ok = points >= t.points
-                        HStack {
-                            Image(systemName: ok ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(ok ? Theme.accent : .white.opacity(0.3))
-                            Text("\(t.points) points").font(.title3)
-                            Spacer()
-                            Text("\(t.creditText) off").font(.title3.weight(.semibold))
-                        }
-                        .padding(.horizontal, 18).padding(.vertical, 14)
-                        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 14))
-                        .opacity(ok ? 1 : 0.5)
-                    }
-                }
-
-                let canRedeem = tiers.contains { $0.points <= points }
-                if canRedeem {
-                    Button("Redeem a reward") { showRedeem = true }.buttonStyle(BigButtonStyle())
-                    Button("Done", action: onDone).buttonStyle(BigButtonStyle(prominent: false))
-                } else {
-                    Button("Done", action: onDone).buttonStyle(BigButtonStyle())
-                }
+                Button("Done", action: onDone).buttonStyle(BigButtonStyle())
             }
             .padding(.top, 8)
         }
-        .sheet(isPresented: $showRedeem) {
-            RedeemSheet(phone: phone, points: points, tiers: tiers) { updated in
+        .sheet(item: $redeemTier) { tier in
+            RedeemSheet(phone: phone, points: points, tiers: tiers, initialTier: tier) { updated in
                 onChanged(LookupResult(status: "member", firstName: result.firstName, points: updated.pointsLeft,
                                        bonusPending: result.bonusPending, signupBonus: result.signupBonus,
                                        birthdaySet: result.birthdaySet, birthdayBonus: result.birthdayBonus,
@@ -100,6 +105,44 @@ struct MemberView: View {
     }
 }
 
+/// One reward in the sideways-scrolling row: what it is, and a Redeem button underneath.
+struct RewardCard: View {
+    let tier: Tier
+    let points: Int
+    var onRedeem: () -> Void
+
+    private var unlocked: Bool { points >= tier.points }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            VStack(spacing: 8) {
+                Text(tier.creditText).font(.system(size: 54, weight: .bold, design: .rounded))
+                Text("off your purchase").font(.title3).foregroundColor(.white.opacity(0.85))
+                Text("\(tier.points) points").font(.headline)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background(Color.white.opacity(0.12)).clipShape(Capsule())
+                if unlocked {
+                    Text("Ready to use").font(.subheadline).foregroundColor(Theme.accent)
+                } else {
+                    VStack(spacing: 6) {
+                        ProgressView(value: Double(min(points, tier.points)), total: Double(tier.points)).tint(Theme.accent)
+                        Text("\(tier.points - points) more points to unlock").font(.subheadline).foregroundColor(.white.opacity(0.6))
+                    }.padding(.horizontal, 8)
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 22).padding(.horizontal, 12)
+            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(unlocked ? Theme.accent : .clear, lineWidth: 2))
+
+            Button("Redeem", action: onRedeem)
+                .buttonStyle(BigButtonStyle(enabled: unlocked))
+                .disabled(!unlocked)
+        }
+        .frame(width: 270)
+        .opacity(unlocked ? 1 : 0.6)
+    }
+}
+
 // MARK: - Redeem (customer)
 
 struct RedeemSheet: View {
@@ -109,6 +152,11 @@ struct RedeemSheet: View {
     let points: Int
     let tiers: [Tier]
     var onRedeemed: (RedeemResult) -> Void
+
+    init(phone: String, points: Int, tiers: [Tier], initialTier: Tier? = nil, onRedeemed: @escaping (RedeemResult) -> Void) {
+        self.phone = phone; self.points = points; self.tiers = tiers; self.onRedeemed = onRedeemed
+        _pending = State(initialValue: initialTier)
+    }
 
     @State private var pending: Tier?                  // reward waiting for "Yes, redeem"
     @State private var attemptId = UUID().uuidString   // reused on retry so credit is never issued twice
