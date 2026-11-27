@@ -104,6 +104,16 @@ const server = createServer(async (req, res) => {
       const sig = req.headers['x-signature'];
       if (sig && !verifySignature(raw, sig)) return send(res, 401, { error: 'bad signature' });
       const payload = parseWebhook(raw);
+      if (payload && process.env.DEBUG_SALE_HOOKS === '1') {
+        // Diagnostic only: shape of each sale event (no names/contact details).
+        const items = payload.register_sale_products || payload.line_items || [];
+        console.log('sale-hook', JSON.stringify({
+          id: String(payload.id || '').slice(0, 8), status: payload.status, state: payload.state,
+          reason: payload.event_reason, keys: Object.keys(payload).slice(0, 40),
+          hasCustomer: !!(payload.customer_id || payload.customer?.id), items: items.length,
+          itemKeys: items[0] ? Object.keys(items[0]) : [],
+        }));
+      }
       const result = payload ? processSale(payload) : { ignored: 'no payload' };
       return send(res, 200, { ok: true, result });
     }
